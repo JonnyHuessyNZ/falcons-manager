@@ -147,28 +147,51 @@
                     return initialState;
                 case 'SETUP_GAME': {
                     const presentPlayers = state.roster.filter(p => p.status !== 'absent');
-                    const boys = presentPlayers.filter(p => p.gender === 'boy');
-                    const girls = presentPlayers.filter(p => p.gender === 'girl');
-                    if (boys.length < BOYS_ON_FIELD || girls.length < GIRLS_ON_FIELD) {
-                        alert(`You need at least ${BOYS_ON_FIELD} boys and ${GIRLS_ON_FIELD} girls to start the game.`);
+                    if (presentPlayers.length < PLAYERS_ON_FIELD) {
+                        alert(`You need at least ${PLAYERS_ON_FIELD} players to start the game.`);
                         return state;
                     }
-                     const newRoster = state.roster.map(p => ({ ...p, status: 'benched', playTime: 0 }));
-                    let boysOnFieldCount = 0;
-                    let girlsOnFieldCount = 0;
-                    const finalRoster = newRoster.map(p => {
-                        if (p.status === 'absent') return p;
-                        if (p.gender === 'boy' && boysOnFieldCount < BOYS_ON_FIELD) {
-                            boysOnFieldCount++;
+
+                    let rosterWithBenched = state.roster.map(p => (p.status === 'absent' ? p : { ...p, status: 'benched', playTime: 0 }));
+
+                    let girlsToField = Math.min(rosterWithBenched.filter(p => p.gender === 'girl' && p.status === 'benched').length, GIRLS_ON_FIELD);
+                    let boysToField = Math.min(rosterWithBenched.filter(p => p.gender === 'boy' && p.status === 'benched').length, BOYS_ON_FIELD);
+                    let playersOnFieldCount = 0;
+
+                    let rosterWithPriorityPicks = rosterWithBenched.map(p => {
+                        if (p.status !== 'benched') return p;
+                        if (p.gender === 'girl' && girlsToField > 0) {
+                            girlsToField--;
+                            playersOnFieldCount++;
                             return { ...p, status: 'playing' };
                         }
-                        if (p.gender === 'girl' && girlsOnFieldCount < GIRLS_ON_FIELD) {
-                            girlsOnFieldCount++;
+                        if (p.gender === 'boy' && boysToField > 0) {
+                            boysToField--;
+                            playersOnFieldCount++;
                             return { ...p, status: 'playing' };
                         }
                         return p;
                     });
-                    return {...state, roster: finalRoster, gameState: 'paused', isSubTimerRunning: false, gameTimer: GAME_TIME_SECONDS, subTimer: state.subInterval, falconsScore: 0, opponentScore: 0, currentHalf: 1 };
+
+                    let finalRoster = rosterWithPriorityPicks.map(p => {
+                        if (p.status === 'benched' && playersOnFieldCount < PLAYERS_ON_FIELD) {
+                            playersOnFieldCount++;
+                            return { ...p, status: 'playing' };
+                        }
+                        return p;
+                    });
+
+                    return {
+                        ...state,
+                        roster: finalRoster,
+                        gameState: 'paused',
+                        isSubTimerRunning: false,
+                        gameTimer: GAME_TIME_SECONDS,
+                        subTimer: state.subInterval,
+                        falconsScore: 0,
+                        opponentScore: 0,
+                        currentHalf: 1
+                    };
                 }
                 case 'SHOW_TOAST':
                     return { ...state, toastMessage: action.payload };
@@ -189,15 +212,33 @@
             const onFieldPlayers = useMemo(() => roster.filter(p => p.status === 'playing'), [roster]);
             const onBenchPlayers = useMemo(() => roster.filter(p => p.status === 'benched'), [roster]);
             const nextSubstitution = useMemo(() => {
-                const boysOnField = onFieldPlayers.filter(p => p.gender === 'boy').sort((a,b) => b.playTime - a.playTime);
-                const boysOnBench = onBenchPlayers.filter(p => p.gender === 'boy').sort((a,b) => a.playTime - b.playTime);
-                const girlsOnField = onFieldPlayers.filter(p => p.gender === 'girl').sort((a,b) => b.playTime - a.playTime);
-                const girlsOnBench = onBenchPlayers.filter(p => p.gender === 'girl').sort((a,b) => a.playTime - b.playTime);
+                const presentGirlsCount = roster.filter(p => p.gender === 'girl' && p.status !== 'absent').length;
                 const subs = { off: [], on: [] };
-                if (boysOnBench.length > 0 && boysOnField.length > 0) { subs.off.push(boysOnField[0]); subs.on.push(boysOnBench[0]); }
-                if (girlsOnBench.length > 0 && girlsOnField.length > 0) { subs.off.push(girlsOnField[0]); subs.on.push(girlsOnBench[0]); }
+
+                if (presentGirlsCount > 2) {
+                    // Original logic: strict gender swap
+                    const boysOnField = onFieldPlayers.filter(p => p.gender === 'boy').sort((a,b) => b.playTime - a.playTime);
+                    const boysOnBench = onBenchPlayers.filter(p => p.gender === 'boy').sort((a,b) => a.playTime - b.playTime);
+                    const girlsOnField = onFieldPlayers.filter(p => p.gender === 'girl').sort((a,b) => b.playTime - a.playTime);
+                    const girlsOnBench = onBenchPlayers.filter(p => p.gender === 'girl').sort((a,b) => a.playTime - b.playTime);
+                    
+                    if (boysOnBench.length > 0 && boysOnField.length > 0) { subs.off.push(boysOnField[0]); subs.on.push(boysOnBench[0]); }
+                    if (girlsOnBench.length > 0 && girlsOnField.length > 0) { subs.off.push(girlsOnField[0]); subs.on.push(girlsOnBench[0]); }
+                } else {
+                    // Flexible, gender-agnostic logic
+                    const fieldCopy = [...onFieldPlayers].sort((a, b) => b.playTime - a.playTime);
+                    const benchCopy = [...onBenchPlayers].sort((a, b) => a.playTime - b.playTime);
+
+                    // Determine how many substitutions to make (up to 2)
+                    const numSubs = Math.min(fieldCopy.length, benchCopy.length, 2);
+
+                    for (let i = 0; i < numSubs; i++) {
+                        subs.off.push(fieldCopy[i]);
+                        subs.on.push(benchCopy[i]);
+                    }
+                }
                 return subs;
-            }, [onFieldPlayers, onBenchPlayers]);
+            }, [roster, onFieldPlayers, onBenchPlayers]);
             
             useEffect(() => {
                 if (gameState !== 'playing') return;
