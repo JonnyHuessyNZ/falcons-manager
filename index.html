@@ -36,7 +36,7 @@
             { id: 10, name: 'Alex', gender: 'boy', number: '', status: 'benched', playTime: 0 },
         ];
 
-        const GAME_TIME_SECONDS = 900; // 15 minutes
+        
         const PLAYERS_ON_FIELD = 6;
         const GIRLS_ON_FIELD = 2;
         const BOYS_ON_FIELD = PLAYERS_ON_FIELD - GIRLS_ON_FIELD;
@@ -84,8 +84,9 @@
             gameState: 'setup', // 'setup', 'playing', 'paused', 'halftime', 'finished'
             subInterval: 180,
             subTimer: 180,
-            subGroupSize: 2,
-            gameTimer: GAME_TIME_SECONDS,
+            subGroupSize: 4,
+            gameTime: 1800, // 30 minutes
+            gameTimer: 1800,
             isSubTimerRunning: false,
             showSubModal: false,
             substitution: { off: [], on: [] },
@@ -108,6 +109,8 @@
                     return { ...state, subGroupSize: action.payload };
                 case 'SET_SUB_GROUP_SIZE':
                     return { ...state, subGroupSize: action.payload };
+                case 'SET_GAME_TIME':
+                    return { ...state, gameTime: action.payload };
                 case 'SET_OPPONENT_NAME':
                     return { ...state, opponentName: action.payload };
                 case 'TICK': {
@@ -150,7 +153,7 @@
                     }
                     return { ...state, opponentScore: Math.max(0, state.opponentScore + action.payload.delta) };
                 case 'START_SECOND_HALF':
-                    return { ...state, currentHalf: 2, gameState: 'paused', gameTimer: GAME_TIME_SECONDS, subTimer: state.subInterval, isSubTimerRunning: false };
+                    return { ...state, currentHalf: 2, gameState: 'paused', gameTimer: state.gameTime / 2, subTimer: state.subInterval, isSubTimerRunning: false };
                 case 'RESET_GAME':
                     return initialState;
                 case 'SETUP_GAME': {
@@ -194,7 +197,7 @@
                         roster: finalRoster,
                         gameState: 'paused',
                         isSubTimerRunning: false,
-                        gameTimer: GAME_TIME_SECONDS,
+                        gameTimer: state.gameTime / 2,
                         subTimer: state.subInterval,
                         falconsScore: 0,
                         opponentScore: 0,
@@ -363,6 +366,8 @@
                 switch (gameState) {
                     case 'setup':
                         return <SetupScreen
+                            state={state}
+                            dispatch={dispatch}
                             opponentName={opponentName}
                             setOpponentName={(name) => dispatch({ type: 'SET_OPPONENT_NAME', payload: name })}
                             subInterval={subInterval}
@@ -438,7 +443,7 @@
             </div>
         );
 
-        const SetupScreen = ({ opponentName, setOpponentName, subInterval, setSubInterval, subGroupSize, setSubGroupSize, roster, handlePlayerNumberChange, handlePlayerStatusToggle, showAddPlayer, setShowAddPlayer, newPlayer, setNewPlayer, handleAddPlayer, handleSetupGame }) => (
+        const SetupScreen = ({ state, dispatch, opponentName, setOpponentName, subInterval, setSubInterval, subGroupSize, setSubGroupSize, roster, handlePlayerNumberChange, handlePlayerStatusToggle, showAddPlayer, setShowAddPlayer, newPlayer, setNewPlayer, handleAddPlayer, handleSetupGame }) => (
             <div className="p-4">
                 <h2 className="text-2xl font-bold mb-4 text-gray-800">Set Today's Game</h2>
                  <div className="bg-white p-4 rounded-lg shadow-md mb-4 space-y-3">
@@ -449,6 +454,10 @@
                     <div>
                         <label htmlFor="subInterval" className="block text-sm font-medium text-gray-700 mb-1">Substitution Interval (minutes)</label>
                         <input type="tel" id="subInterval" defaultValue={subInterval / 60} onBlur={(e) => { const m = parseInt(e.target.value); if(m>0){setSubInterval(m*60);}}} className="w-full p-2 border rounded-md"/>
+                    </div>
+                    <div>
+                        <label htmlFor="gameTime" className="block text-sm font-medium text-gray-700 mb-1">Total Game Time (minutes)</label>
+                        <input type="tel" id="gameTime" defaultValue={state.gameTime / 60} onBlur={(e) => { const m = parseInt(e.target.value); if(m>0){dispatch({type: 'SET_GAME_TIME', payload: m*60});}}} className="w-full p-2 border rounded-md"/>
                     </div>
                     <div>
                         <label htmlFor="subGroupSize" className="block text-sm font-medium text-gray-700 mb-1">Players per Substitution</label>
@@ -501,7 +510,7 @@
 
         const GameScreen = ({ state, dispatch, onFieldPlayers, onBenchPlayers, nextSubstitution, wakeLockSentinel, toggleWakeLock }) => {
             const { gameState, gameTimer, currentHalf, subTimer, isSubTimerRunning, showSubModal, substitution, falconsScore, opponentScore, opponentName } = state;
-            const mainButtonText = gameState === 'playing' ? 'PAUSE GAME' : (gameTimer === GAME_TIME_SECONDS ? 'START GAME' : 'RESUME GAME');
+            const mainButtonText = gameState === 'playing' ? 'PAUSE GAME' : (gameTimer === state.gameTime / 2 ? 'START GAME' : 'RESUME GAME');
 
             return (
                 <div className="p-4">
